@@ -1,5 +1,9 @@
 # RiskIQ
 
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://andrewskoblovriskiq.streamlit.app/)
+
+**Live app: [andrewskoblovriskiq.streamlit.app](https://andrewskoblovriskiq.streamlit.app/)**
+
 Explainable transaction risk scoring, built with Streamlit.
 
 Most scoring demos hand you a number. RiskIQ shows the arithmetic: every score
@@ -37,9 +41,23 @@ confidence value describing how much evidence stands behind it.
 ## Running locally
 
 ```bash
+python -m venv .venv
+.venv\Scripts\activate       # Windows
+source .venv/bin/activate    # macOS and Linux
+
 pip install -r requirements.txt
 streamlit run Home.py
 ```
+
+The app opens on `http://localhost:8501`.
+
+## Deployed on Streamlit Community Cloud
+
+Hosted at [andrewskoblovriskiq.streamlit.app](https://andrewskoblovriskiq.streamlit.app/),
+deployed from `main` with `Home.py` as the entry point. Streamlit discovers the
+`pages/` directory automatically, so the three secondary pages appear in the
+sidebar with no extra configuration. See [DEPLOYMENT.md](DEPLOYMENT.md) for the
+full setup and redeploy notes.
 
 ## Data
 
