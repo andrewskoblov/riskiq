@@ -15,6 +15,8 @@ from risk_engine import PROFILES, score_dataframe
 DEFAULT_RECORDS = 650
 DEFAULT_SEED = 42
 
+REPO_URL = "https://github.com/andrewskoblov/riskiq"
+
 
 @st.cache_data(show_spinner=False)
 def _load(n_records: int, seed: int) -> pd.DataFrame:
@@ -64,5 +66,9 @@ def sidebar_controls() -> tuple[str, int]:
 
         st.divider()
         st.caption("Synthetic data. No real cardholder information is used anywhere in this app.")
+        st.markdown(
+            f'<a href="{REPO_URL}" target="_blank" class="riq-repo">View source on GitHub</a>',
+            unsafe_allow_html=True,
+        )
 
     return profile, n_records

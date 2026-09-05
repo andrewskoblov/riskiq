@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from data_service import get_scored_data, sidebar_controls
+from data_service import REPO_URL, get_scored_data, sidebar_controls
 from risk_engine import BAND_COLORS, BANDS, PROFILES
 from utils import band_badge, empty_state, hero, page_setup, stat_card, style_chart
 
@@ -19,6 +19,7 @@ hero(
     "Explainable transaction risk scoring. Every score decomposes into the factors that "
     "produced it, weighted by a profile you choose, and carries a confidence value that "
     "reflects how much corroborating evidence stands behind it.",
+    link=REPO_URL,
 )
 
 if df.empty:

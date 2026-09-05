@@ -72,15 +72,32 @@ def inject_css() -> None:
 
         [data-testid="stSidebar"] { background: #f6f7fb; border-right: 1px solid #e5e7eb; }
         footer, #MainMenu { visibility: hidden; }
+
+        .riq-repo {
+            display: inline-block; margin-top: .5rem; font-size: .82rem; font-weight: 600;
+            color: #4f46e5; text-decoration: none;
+        }
+        .riq-repo:hover { text-decoration: underline; }
+
+        .riq-hero a.riq-herolink {
+            display: inline-block; margin-top: .9rem; padding: .4rem .9rem;
+            background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.35);
+            border-radius: 8px; color: #fff; text-decoration: none;
+            font-size: .84rem; font-weight: 600;
+        }
+        .riq-hero a.riq-herolink:hover { background: rgba(255,255,255,.28); }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
-def hero(title: str, subtitle: str) -> None:
+def hero(title: str, subtitle: str, link: str | None = None, link_text: str = "View source on GitHub") -> None:
+    link_html = (
+        f'<a class="riq-herolink" href="{link}" target="_blank">{link_text}</a>' if link else ""
+    )
     st.markdown(
-        f'<div class="riq-hero"><h1>{title}</h1><p>{subtitle}</p></div>',
+        f'<div class="riq-hero"><h1>{title}</h1><p>{subtitle}</p>{link_html}</div>',
         unsafe_allow_html=True,
     )
 
