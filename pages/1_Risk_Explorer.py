@@ -5,13 +5,14 @@ from __future__ import annotations
 import plotly.express as px
 import streamlit as st
 
-from data_service import get_scored_data, sidebar_controls
+from data_service import get_scored_data, group_column, sidebar_controls
 from risk_engine import BAND_COLORS, BANDS
 from utils import empty_state, hero, page_setup, stat_card, style_chart
 
 page_setup("Risk Explorer")
-profile, _ = sidebar_controls()
-df = get_scored_data(profile=profile)
+profile, source = sidebar_controls()
+df, pack = get_scored_data(profile)
+GROUP = group_column(df)
 
 hero("Risk Explorer", "Slice the scored population by band, geography, category and score range.")
 
@@ -56,12 +57,12 @@ with left:
     st.plotly_chart(fig, width="stretch")
 
 with right:
-    by_cat = view.groupby("category", as_index=False).agg(
+    by_cat = view.groupby(GROUP, as_index=False).agg(
         transactions=("txn_id", "count"), mean_score=("risk_score", "mean"))
-    by_cat = by_cat.sort_values("mean_score", ascending=True)
-    fig2 = px.bar(by_cat, x="mean_score", y="category", orientation="h",
+    by_cat = by_cat.sort_values("mean_score", ascending=True).tail(12)
+    fig2 = px.bar(by_cat, x="mean_score", y=GROUP, orientation="h",
                   hover_data=["transactions"])
-    style_chart(fig2, "Mean score by category", height=330,
+    style_chart(fig2, f"Mean score by {GROUP}", height=330,
                 xaxis={"title": "Mean risk score"}, yaxis={"title": ""})
     st.plotly_chart(fig2, width="stretch")
 
@@ -75,8 +76,10 @@ st.plotly_chart(fig3, width="stretch")
 
 st.write("")
 st.markdown("#### Matching transactions")
-table = view[["txn_id", "timestamp", "account_id", "amount", "category", "country",
-              "risk_score", "risk_band", "confidence"]].sort_values("risk_score", ascending=False)
+cols = ["txn_id", "timestamp", "account_id", "amount", GROUP, "country",
+        "risk_score", "risk_band", "confidence"]
+cols = list(dict.fromkeys(cols))  # GROUP may already be "country"
+table = view[cols].sort_values("risk_score", ascending=False)
 st.dataframe(
     table, width="stretch", hide_index=True, height=380,
     column_config={

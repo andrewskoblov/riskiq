@@ -10,8 +10,8 @@ from risk_engine import score_transaction
 from utils import band_badge, empty_state, hero, page_setup, stat_card, style_chart
 
 page_setup("Case Investigation")
-profile, _ = sidebar_controls()
-df = get_scored_data(profile=profile)
+profile, source = sidebar_controls()
+df, pack = get_scored_data(profile)
 
 hero("Case Investigation", "Every point of a score traced back to the factor that contributed it.")
 
@@ -43,7 +43,7 @@ if row.empty:
     st.stop()
 
 txn = row.iloc[0].to_dict()
-result = score_transaction(txn, profile)
+result = score_transaction(txn, profile, pack)
 
 st.write("")
 c1, c2, c3, c4 = st.columns(4)
@@ -59,7 +59,7 @@ with c2:
 with c3:
     stat_card("Confidence", f"{result['confidence']}%", "evidence and account history")
 with c4:
-    stat_card("Amount", f"${txn['amount']:,.2f}", str(txn["category"]))
+    stat_card("Amount", f"${txn['amount']:,.2f}", str(txn.get("category") or txn.get("country") or ""))
 
 st.write("")
 left, right = st.columns([3, 2])
@@ -102,11 +102,33 @@ with right:
         st.plotly_chart(fig, width="stretch")
 
     st.markdown("#### Account context")
-    st.markdown(
-        f"- Account **{txn['account_id']}**, home country **{txn['account_country']}**\n"
-        f"- **{txn['account_age_days']}** days old, **{txn['prior_txns']}** prior transactions\n"
-        f"- **{txn['prior_chargebacks']}** prior chargeback(s)\n"
-        f"- Typical spend **${txn['acct_avg_amount']:,.2f}** (sd ${txn['acct_std_amount']:,.2f})\n"
-        f"- **{txn['txns_24h']}** transactions in the last 24 hours\n"
-        f"- Email domain **{txn['email_domain']}**"
+
+    lines = [f"- Account **{txn['account_id']}**"]
+    if txn.get("account_country"):
+        lines.append(f"- Home country **{txn['account_country']}**")
+    if txn.get("country"):
+        lines.append(f"- Transaction country **{txn['country']}**")
+    lines.append(
+        f"- **{int(txn.get('account_age_days') or 0)}** days of history, "
+        f"**{int(txn.get('prior_txns') or 0)}** prior transactions"
     )
+    if "prior_chargebacks" in txn:
+        lines.append(f"- **{int(txn['prior_chargebacks'])}** prior chargeback(s)")
+    if "prior_cancellations" in txn:
+        lines.append(f"- **{int(txn['prior_cancellations'])}** prior cancellation(s)")
+    lines.append(
+        f"- Typical spend **${float(txn.get('acct_avg_amount') or 0):,.2f}** "
+        f"(sd ${float(txn.get('acct_std_amount') or 0):,.2f})"
+    )
+    lines.append(f"- **{int(txn.get('txns_24h') or 0)}** transactions in the last 24 hours")
+    if txn.get("email_domain"):
+        lines.append(f"- Email domain **{txn['email_domain']}**")
+    if "n_items" in txn:
+        lines.append(
+            f"- Basket of **{int(txn['n_items'])}** line items, "
+            f"**{float(txn.get('n_units') or 0):,.0f}** units"
+        )
+    if txn.get("is_guest"):
+        lines.append("- **Guest checkout**, no registered customer account")
+
+    st.markdown("\n".join(lines))

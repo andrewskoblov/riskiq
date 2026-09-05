@@ -6,13 +6,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from data_service import REPO_URL, get_scored_data, sidebar_controls
-from risk_engine import BAND_COLORS, BANDS, PROFILES
+from data_service import REAL, REPO_URL, get_scored_data, sidebar_controls
+from risk_engine import BAND_COLORS, BANDS, thresholds_for
 from utils import band_badge, empty_state, hero, page_setup, stat_card, style_chart
 
 page_setup("Overview")
-profile, n_records = sidebar_controls()
-df = get_scored_data(profile=profile)
+profile, source = sidebar_controls()
+df, pack = get_scored_data(profile)
 
 hero(
     "RiskIQ",
@@ -26,12 +26,18 @@ if df.empty:
     empty_state("No transactions in the current selection. Raise the transaction volume in the sidebar.")
     st.stop()
 
+st.caption(
+    f"**{source}** &nbsp;|&nbsp; {len(df):,} transactions &nbsp;|&nbsp; "
+    f"{profile} profile &nbsp;|&nbsp; {pack} factor pack"
+)
+
 flagged = df[df["risk_band"].isin(["Critical", "High"])]
 value_at_risk = float(flagged["amount"].sum())
 
 c1, c2, c3, c4 = st.columns(4)
 with c1:
-    stat_card("Transactions scored", f"{len(df):,}", f"Profile: {profile}")
+    stat_card("Transactions scored", f"{len(df):,}",
+              "Real data" if source == REAL else "Synthetic data")
 with c2:
     stat_card("Flagged (High + Critical)", f"{len(flagged):,}",
               f"{len(flagged) / len(df) * 100:.1f}% of volume")
@@ -57,7 +63,7 @@ with left:
 
 with right:
     mean_score = float(df["risk_score"].mean())
-    t = PROFILES[profile]["thresholds"]
+    t = thresholds_for(profile, pack)
     gauge = go.Figure(go.Indicator(
         mode="gauge+number",
         value=mean_score,

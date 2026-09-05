@@ -8,12 +8,13 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from data_service import get_scored_data, sidebar_controls
-from risk_engine import FACTORS, PROFILES, score_transaction
+from risk_engine import FACTOR_PACKS, PROFILES, score_transaction, thresholds_for, weights_for
 from utils import empty_state, hero, page_setup, stat_card, style_chart
 
 page_setup("Model Insights")
-profile, _ = sidebar_controls()
-df = get_scored_data(profile=profile)
+profile, source = sidebar_controls()
+df, pack = get_scored_data(profile)
+FACTORS = FACTOR_PACKS[pack]
 
 hero("Model Insights", "Move the review threshold and watch flagged volume and exposure respond in real time.")
 
@@ -23,7 +24,7 @@ if df.empty:
 
 # --- Threshold simulator ---------------------------------------------------
 st.markdown("#### Threshold simulator")
-default_high = PROFILES[profile]["thresholds"]["high"]
+default_high = thresholds_for(profile, pack)["high"]
 threshold = st.slider(
     "Flag every transaction scoring at or above", 0, 100, int(default_high), step=1,
     help="The profile default is shown as the starting position. Drag to see the operational trade off.",
@@ -68,7 +69,7 @@ labels = {f.key: f.label for f in FACTORS}
 fire_counts = {f.key: 0 for f in FACTORS}
 
 for row in sample:
-    for c in score_transaction(row, profile)["factors"]:
+    for c in score_transaction(row, profile, pack)["factors"]:
         totals[c["key"]] += c["points"]
         if c["fired"]:
             fire_counts[c["key"]] += 1
@@ -87,7 +88,7 @@ with left:
     st.plotly_chart(fig2, width="stretch")
 
 with right:
-    weights = PROFILES[profile]["weights"]
+    weights = weights_for(profile, pack)
     wdf = pd.DataFrame({
         "Factor": [labels[k] for k in weights],
         "Weight": list(weights.values()),
@@ -102,20 +103,20 @@ st.divider()
 # --- Profile comparison ----------------------------------------------------
 st.markdown("#### How the four profiles score the same traffic")
 
-base = get_scored_data(profile=profile).drop(
-    columns=["risk_score", "risk_band", "confidence", "active_factors"], errors="ignore")
+base = df.drop(columns=["risk_score", "risk_band", "confidence", "active_factors"], errors="ignore")
 subset = base.head(300).to_dict("records")
 
 rows = []
 for name in PROFILES:
-    scores = [score_transaction(r, name)["score"] for r in subset]
-    flagged_n = sum(1 for s in scores if s >= PROFILES[name]["thresholds"]["high"])
+    scores = [score_transaction(r, name, pack)["score"] for r in subset]
+    high_cut = thresholds_for(name, pack)["high"]
+    flagged_n = sum(1 for s in scores if s >= high_cut)
     rows.append({
         "Profile": name,
         "Mean score": round(sum(scores) / len(scores), 1) if scores else 0.0,
         "Flagged at profile threshold": flagged_n,
         "Flag rate": f"{flagged_n / len(scores) * 100:.1f}%" if scores else "n/a",
-        "High threshold": PROFILES[name]["thresholds"]["high"],
+        "High threshold": high_cut,
     })
 
 st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
