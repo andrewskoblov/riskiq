@@ -2,4 +2,6 @@ streamlit>=1.36
 pandas>=2.1
 numpy>=1.26
 plotly>=5.20
-pyarrow>=14.0
+# Streamlit Cloud rejects pyarrow 25.x for a known segfault (apache/arrow#50471)
+# and downgrades it on every boot. Pinning below 25 skips that churn.
+pyarrow>=14.0,<25

@@ -1,0 +1,60 @@
+name: Keep Streamlit app awake
+
+# Streamlit Community Cloud puts an app to sleep after about 7 days without
+# traffic. This runs daily: it always pings the app, and it pushes an empty
+# commit only when the repository has been quiet long enough to be at risk.
+#
+# Why not ping only? GitHub disables scheduled workflows after 60 days of
+# repository inactivity, so a ping-only workflow eventually switches itself
+# off. Pushing an occasional commit keeps the workflow alive as well as the app.
+#
+# Why not commit every run? A commit per day is 365 a year of pure noise in the
+# history. STALE_AFTER_DAYS is set below the sleep threshold, which keeps the
+# app up at roughly a tenth of the commit volume.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"   # 06:17 UTC daily
+  workflow_dispatch:        # and on demand from the Actions tab
+
+permissions:
+  contents: write
+
+env:
+  APP_URL: https://andrewskoblovriskiq.streamlit.app/
+  STALE_AFTER_DAYS: 5
+
+jobs:
+  keep-awake:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ping the app
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -L --max-time 60 "$APP_URL" || echo "000")
+          echo "GET $APP_URL -> HTTP $code"
+          if [ "$code" = "000" ]; then
+            echo "::warning::App did not respond. It may be sleeping or the URL may have changed."
+          fi
+
+      - name: Push an empty commit if the repo has gone stale
+        run: |
+          last=$(git log -1 --format=%ct)
+          now=$(date +%s)
+          age_days=$(( (now - last) / 86400 ))
+          echo "Last commit was $age_days day(s) ago (threshold: $STALE_AFTER_DAYS)."
+
+          if [ "$age_days" -lt "$STALE_AFTER_DAYS" ]; then
+            echo "Repository is still active. Nothing to do."
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "chore: keep Streamlit app awake"
+          git push
+          echo "Pushed an empty commit to trigger a redeploy."
