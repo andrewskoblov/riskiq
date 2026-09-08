@@ -8,6 +8,8 @@ fingerprint and email domain that real open datasets rarely publish.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 import streamlit as st
 
@@ -22,10 +24,17 @@ DEFAULT_REAL_ROWS = 8000
 REPO_URL = "https://github.com/andrewskoblov/riskiq"
 
 REAL = "Real (UCI Online Retail II)"
+CREDIT = "Real (UCI Credit Default)"
 SYNTHETIC = "Synthetic"
-SOURCES = [REAL, SYNTHETIC]
+SOURCES = [REAL, CREDIT, SYNTHETIC]
 
-PACK_FOR_SOURCE = {REAL: "retail", SYNTHETIC: "synthetic"}
+PACK_FOR_SOURCE = {REAL: "retail", CREDIT: "credit", SYNTHETIC: "synthetic"}
+
+# Only the credit source carries a real outcome label, so only it supports the
+# validation metrics.
+LABEL_COLUMN = "defaulted"
+
+CREDIT_PATH = Path(__file__).parent / "data" / "credit.parquet"
 
 
 @st.cache_data(show_spinner=False)
@@ -49,18 +58,47 @@ def _score(df: pd.DataFrame, profile: str, pack: str) -> pd.DataFrame:
     return score_dataframe(df, profile, pack)
 
 
+@st.cache_data(show_spinner="Loading credit portfolio...")
+def _load_credit() -> pd.DataFrame:
+    return pd.read_parquet(CREDIT_PATH)
+
+
 def real_data_available() -> bool:
     return real_data.DATA_PATH.exists()
 
 
+def credit_data_available() -> bool:
+    return CREDIT_PATH.exists()
+
+
+def available_sources() -> list[str]:
+    out = []
+    if real_data_available():
+        out.append(REAL)
+    if credit_data_available():
+        out.append(CREDIT)
+    out.append(SYNTHETIC)
+    return out
+
+
+def default_source() -> str:
+    return available_sources()[0]
+
+
+def has_labels(df: pd.DataFrame) -> bool:
+    return LABEL_COLUMN in df.columns
+
+
 def get_scored_data(profile: str | None = None) -> tuple[pd.DataFrame, str]:
     """Return (scored dataframe, factor pack) for the active sidebar selection."""
-    source = st.session_state.get("source", REAL if real_data_available() else SYNTHETIC)
+    source = st.session_state.get("source", default_source())
     profile = profile or st.session_state.get("profile", "General")
     pack = PACK_FOR_SOURCE[source]
 
     if source == REAL:
         df = _load_real(st.session_state.get("real_rows", DEFAULT_REAL_ROWS))
+    elif source == CREDIT:
+        df = _load_credit()
     else:
         df = _load_synthetic(
             st.session_state.get("n_records", DEFAULT_RECORDS),
@@ -77,20 +115,30 @@ def group_column(df: pd.DataFrame) -> str:
 
 def sidebar_controls() -> tuple[str, str]:
     """Render the shared sidebar. Returns the active (profile, source)."""
-    has_real = real_data_available()
+    sources = available_sources()
 
     with st.sidebar:
         st.markdown("### RiskIQ")
         st.caption("Explainable transaction risk scoring")
         st.divider()
 
-        if has_real:
-            source = st.radio("Data source", SOURCES, key="source")
+        if len(sources) > 1:
+            source = st.radio("Data source", sources, key="source")
         else:
-            source = SYNTHETIC
-            st.info("Real dataset not found. Build it with tools/build_real_dataset.py.")
+            source = sources[0]
+            st.info("Real datasets not found. Build them with the scripts in tools/.")
 
-        if source == REAL:
+        if source == CREDIT:
+            st.caption(
+                "UCI Default of Credit Card Clients: 30,000 real accounts from a Taiwanese "
+                "issuer, April to September 2005, with a real default outcome label."
+            )
+            st.caption(
+                "Sex, marital status, age and education are present in the source and are "
+                "excluded from scoring. Regulation B prohibits them as a basis for credit "
+                "decisions. They are retained only to monitor disparate impact."
+            )
+        elif source == REAL:
             st.caption(
                 f"{real_data.SOURCE_NAME}: 53,628 real invoices from a UK online retailer, "
                 "2009 to 2011, aggregated from 1.07 million line items."
@@ -128,6 +176,11 @@ def sidebar_controls() -> tuple[str, str]:
             st.caption(
                 f"Real transaction data from the [{real_data.SOURCE_NAME}]({real_data.SOURCE_URL}) "
                 "dataset. Personal data is not included in the source."
+            )
+        elif source == CREDIT:
+            st.caption(
+                "Real credit data from the [UCI Default of Credit Card Clients]"
+                "(https://archive.ics.uci.edu/dataset/350/default+of+credit+card+clients) dataset."
             )
         else:
             st.caption("Synthetic data. No real cardholder information is used anywhere in this app.")

@@ -209,9 +209,129 @@ RETAIL_FACTORS: list[Factor] = [
     Factor("negative_amount", "Negative or zero value", _f_negative_amount),
 ]
 
+# ---------------------------------------------------------------------------
+# Credit factor pack
+#
+# For the UCI Default of Credit Card Clients data, which carries a real default
+# label. Every factor here is a behavioural or exposure measure.
+#
+# Sex, marital status, age and education are present in the source and are
+# deliberately absent from this list. Under the Equal Credit Opportunity Act and
+# Regulation B, sex and marital status are prohibited bases for a credit
+# decision and age is restricted. They are carried in the data as monitor_*
+# columns so disparate impact can be measured, which is what a lender is
+# expected to do, and they never contribute a single point to a score.
+# ---------------------------------------------------------------------------
+
+
+def _f_current_delinquency(txn):
+    status = int(txn.get("pay_status_current") or 0)
+    if status <= 0:
+        return 0.0, "Current on the most recent statement"
+    signal = _clamp(status / 4.0)
+    return signal, f"{status} month(s) past due on the most recent statement"
+
+
+def _f_delinquency_depth(txn):
+    worst = int(txn.get("pay_status_worst") or 0)
+    if worst <= 0:
+        return 0.0, "Never past due across the six month window"
+    signal = _clamp(worst / 5.0)
+    return signal, f"Worst delinquency in the last six months was {worst} month(s) past due"
+
+
+def _f_delinquency_frequency(txn):
+    n = int(txn.get("months_delinquent") or 0)
+    if n <= 0:
+        return 0.0, "No delinquent months in the six month window"
+    signal = _clamp(n / 4.0)
+    return signal, f"Past due in {n} of the last 6 months"
+
+
+def _f_utilization(txn):
+    u = float(txn.get("utilization") or 0.0)
+    signal = _clamp((u - 0.3) / 0.7)
+    if signal <= 0:
+        return 0.0, f"Utilisation of {u:.0%} of the credit limit"
+    return signal, f"Utilisation of {u:.0%} of the credit limit"
+
+
+def _f_sustained_utilization(txn):
+    u = float(txn.get("avg_utilization") or 0.0)
+    signal = _clamp((u - 0.35) / 0.65)
+    if signal <= 0:
+        return 0.0, f"Six month average utilisation of {u:.0%}"
+    return signal, f"Sustained high utilisation, averaging {u:.0%} over six months"
+
+
+def _f_balance_trend(txn):
+    t = float(txn.get("balance_trend") or 0.0)
+    signal = _clamp(t / 0.5)
+    if signal <= 0:
+        return 0.0, "Balance is flat or falling over the six month window"
+    return signal, f"Balance has grown by {t:.0%} of the credit limit over six months"
+
+
+def _f_payment_coverage(txn):
+    c = float(txn.get("payment_coverage") if txn.get("payment_coverage") is not None else 1.0)
+    signal = _clamp((0.3 - c) / 0.3)
+    if signal <= 0:
+        return 0.0, f"Paid {c:.0%} of the previous statement"
+    return signal, f"Paid only {c:.0%} of the previous statement balance"
+
+
+def _f_revolving(txn):
+    status = int(txn.get("pay_status_current") or 0)
+    if status == 0:
+        return 0.6, "Revolving the balance rather than paying in full"
+    if status < 0:
+        return 0.0, "Settled the statement in full"
+    return 0.0, "Delinquency is captured by the past due factors"
+
+
+def _f_limit_size(txn):
+    limit = float(txn.get("credit_limit") or 0.0)
+    signal = _clamp((120_000 - limit) / 120_000)
+    if signal <= 0:
+        return 0.0, f"Credit limit of {limit:,.0f}"
+    return signal, f"Low credit limit of {limit:,.0f}, typical of a thinner file"
+
+
+def _f_repayment_volume(txn):
+    repaid = float(txn.get("total_repaid_6m") or 0.0)
+    limit = max(float(txn.get("credit_limit") or 1.0), 1.0)
+    ratio = repaid / limit
+    signal = _clamp((0.25 - ratio) / 0.25)
+    if signal <= 0:
+        return 0.0, f"Repaid {ratio:.0%} of the credit limit over six months"
+    return signal, f"Repaid only {ratio:.0%} of the credit limit over six months"
+
+
+CREDIT_FACTORS: list[Factor] = [
+    Factor("current_delinquency", "Current delinquency", _f_current_delinquency),
+    Factor("delinquency_depth", "Worst delinquency", _f_delinquency_depth),
+    Factor("delinquency_frequency", "Delinquency frequency", _f_delinquency_frequency),
+    Factor("utilization", "Credit utilisation", _f_utilization),
+    Factor("sustained_utilization", "Sustained utilisation", _f_sustained_utilization),
+    Factor("balance_trend", "Rising balance", _f_balance_trend),
+    Factor("payment_coverage", "Payment coverage", _f_payment_coverage),
+    Factor("revolving", "Revolving behaviour", _f_revolving),
+    Factor("limit_size", "Credit limit", _f_limit_size),
+    Factor("repayment_volume", "Repayment volume", _f_repayment_volume),
+]
+
+# Present in the source, never scored. See the note above.
+PROTECTED_ATTRIBUTES = {
+    "monitor_sex": "Sex",
+    "monitor_marriage": "Marital status",
+    "monitor_age": "Age",
+    "monitor_education": "Education",
+}
+
 FACTOR_PACKS: dict[str, list[Factor]] = {
     "synthetic": FACTORS,
     "retail": RETAIL_FACTORS,
+    "credit": CREDIT_FACTORS,
 }
 
 
@@ -236,10 +356,16 @@ PROFILES: dict[str, dict] = {
                 "new_account": 10, "cancellations": 14, "guest_checkout": 14,
                 "bulk_order": 8, "high_unit_price": 6, "negative_amount": 6,
             },
+            "credit": {
+                "current_delinquency": 14, "delinquency_depth": 10, "delinquency_frequency": 10,
+                "utilization": 14, "sustained_utilization": 12, "balance_trend": 8,
+                "payment_coverage": 14, "revolving": 8, "limit_size": 6, "repayment_volume": 4,
+            },
         },
         "thresholds": {
             "synthetic": {"critical": 62, "high": 45, "medium": 28},
             "retail": {"critical": 42.9, "high": 30.9, "medium": 27.6},
+            "credit": {"critical": 56.6, "high": 47.5, "medium": 32.5},
         },
     },
     "Lending": {
@@ -255,10 +381,16 @@ PROFILES: dict[str, dict] = {
                 "new_account": 22, "cancellations": 20, "guest_checkout": 14,
                 "bulk_order": 4, "high_unit_price": 4, "negative_amount": 4,
             },
+            "credit": {
+                "current_delinquency": 20, "delinquency_depth": 14, "delinquency_frequency": 14,
+                "utilization": 10, "sustained_utilization": 10, "balance_trend": 6,
+                "payment_coverage": 14, "revolving": 4, "limit_size": 4, "repayment_volume": 4,
+            },
         },
         "thresholds": {
             "synthetic": {"critical": 65, "high": 48, "medium": 30},
             "retail": {"critical": 54.2, "high": 40.0, "medium": 38.4},
+            "credit": {"critical": 57.2, "high": 42.4, "medium": 28.6},
         },
     },
     "Payments": {
@@ -274,10 +406,16 @@ PROFILES: dict[str, dict] = {
                 "new_account": 8, "cancellations": 8, "guest_checkout": 8,
                 "bulk_order": 6, "high_unit_price": 4, "negative_amount": 4,
             },
+            "credit": {
+                "current_delinquency": 12, "delinquency_depth": 10, "delinquency_frequency": 12,
+                "utilization": 12, "sustained_utilization": 12, "balance_trend": 14,
+                "payment_coverage": 12, "revolving": 6, "limit_size": 4, "repayment_volume": 6,
+            },
         },
         "thresholds": {
             "synthetic": {"critical": 60, "high": 43, "medium": 26},
             "retail": {"critical": 39.1, "high": 25.9, "medium": 18.4},
+            "credit": {"critical": 55.4, "high": 46.9, "medium": 31.6},
         },
     },
     "General": {
@@ -285,10 +423,12 @@ PROFILES: dict[str, dict] = {
         "weights": {
             "synthetic": {f.key: 10 for f in FACTORS},
             "retail": {f.key: 10 for f in RETAIL_FACTORS},
+            "credit": {f.key: 10 for f in CREDIT_FACTORS},
         },
         "thresholds": {
             "synthetic": {"critical": 63, "high": 46, "medium": 28},
             "retail": {"critical": 40.9, "high": 30.0, "medium": 26.0},
+            "credit": {"critical": 51.3, "high": 44.5, "medium": 32.0},
         },
     },
 }
